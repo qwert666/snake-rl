@@ -2,11 +2,19 @@ use bevy::prelude::*;
 use rand::prelude::random;
 use std::time::Duration;
 
-const ARENA_WIDTH: u32 = 10;
-const ARENA_HEIGHT: u32 = 10;
+const ARENA_WIDTH: u32 = 6;
+const ARENA_HEIGHT: u32 = 6;
 
-#[derive(Default, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Default, Copy, Clone, Eq, PartialEq, Hash, Debug)]
 struct Position { x: i32, y: i32 }
+impl Position {
+    pub fn generate() -> Self {
+        Self {
+            x: (random::<f32>() * ARENA_WIDTH as f32) as i32,
+            y: (random::<f32>() * ARENA_HEIGHT as f32) as i32,
+        }
+    }
+}
 
 struct Size { width: f32, height: f32 }
 impl Size {
@@ -79,23 +87,39 @@ impl Default for FoodSpawnTimer {
     }
 }
 
+fn get_positions(
+    segments: ResMut<SnakeSegments>,
+    mut positions: Query<&mut Position>
+) -> Vec<Position> {
+    return segments.0
+        .iter()
+        .map(|e| *positions.get_mut(*e).unwrap())
+        .collect::<Vec<Position>>()
+}
+
 fn food_spawner(
     commands: &mut Commands,
     materials: Res<Materials>,
     time: Res<Time>,
     mut timer: Local<FoodSpawnTimer>,
+    segments: ResMut<SnakeSegments>,
+    positions: Query<&mut Position>
 ) {
     if timer.0.tick(time.delta_seconds()).finished() {
+        let segment_positions = get_positions(segments, positions);
+        let mut food_position = Position::generate();
+
+        while segment_positions.iter().any(|&segment| segment == food_position){
+            food_position = Position::generate();
+        };
+        
         commands
             .spawn(SpriteBundle {
                 material: materials.food_material.clone(),
                 ..Default::default()
             })
             .with(Food)
-            .with(Position {
-                x: (random::<f32>() * ARENA_WIDTH as f32) as i32,
-                y: (random::<f32>() * ARENA_HEIGHT as f32) as i32,
-            })
+            .with(food_position)
             .with(Size::square(0.8));
     }
 }
