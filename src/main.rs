@@ -4,6 +4,7 @@ use std::time::Duration;
 
 const ARENA_WIDTH: u32 = 6;
 const ARENA_HEIGHT: u32 = 6;
+const FOOD_SPAWN_TIME: u64 = 1000;
 
 #[derive(Default, Copy, Clone, Eq, PartialEq, Hash, Debug)]
 struct Position { x: i32, y: i32 }
@@ -15,6 +16,9 @@ impl Position {
         }
     }
 }
+
+#[derive(Debug)]
+struct Board(Vec<Position>);
 
 struct Size { width: f32, height: f32 }
 impl Size {
@@ -83,7 +87,7 @@ struct Food;
 struct FoodSpawnTimer(Timer);
 impl Default for FoodSpawnTimer {
     fn default() -> Self {
-        Self(Timer::new(Duration::from_millis(1000), true))
+        Self(Timer::new(Duration::from_millis(FOOD_SPAWN_TIME), true))
     }
 }
 
@@ -126,38 +130,46 @@ fn food_spawner(
 
 fn setup(
     commands: &mut Commands,
+    _asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    asset_server: Res<AssetServer>
 ){
-    commands.spawn(CameraUiBundle::default())
+    // let head = asset_server.load("sprites/head.png");
+    // let apple = asset_server.load("sprites/apple.png");
+    commands
+        .spawn(CameraUiBundle::default())
         .spawn(Camera2dBundle::default())
-        .spawn(TextBundle {
-            text: Text {
-                value: "0".to_string(),
-                font: asset_server.load("fonts/FiraSans-Bold.ttf"),
-                style: TextStyle {
-                    font_size: 100.0,
-                    color: Color::WHITE,
-                    alignment: TextAlignment {
-                        vertical: VerticalAlign::Center,
-                        horizontal: HorizontalAlign::Center,
-                    },
-                },
-            },
-            ..Default::default()
-        }).with(Score(0))
         .insert_resource(Materials {
             head_material: materials.add(Color::rgb(0.7, 0.7, 0.7).into()),
             segment_material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
             food_material: materials.add(Color::rgb(1.0, 0.0, 1.0).into())
+            // head_material: materials.add(head.into()),
+            // food_material: materials.add(apple.into())
         });
 }
 
 fn spawn_snake(
     commands: &mut Commands,
+    asset_server: Res<AssetServer>,
     materials: Res<Materials>,
     mut segments: ResMut<SnakeSegments>,
 ) {
+
+    commands.spawn(TextBundle {
+        text: Text {
+            value: "0".to_string(),
+            font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+            style: TextStyle {
+                font_size: 100.0,
+                color: Color::WHITE,
+                alignment: TextAlignment {
+                    vertical: VerticalAlign::Center,
+                    horizontal: HorizontalAlign::Center,
+                },
+            },
+        },
+        ..Default::default()
+    }).with(Score(0));
+
     segments.0 = vec![
         commands
             .spawn(SpriteBundle {
@@ -293,6 +305,7 @@ fn game_over(
     mut reader: Local<EventReader<GameOverEvent>>,
     game_over_events: Res<Events<GameOverEvent>>,
     materials: Res<Materials>,
+    asset_server: Res<AssetServer>,
     segments_res: ResMut<SnakeSegments>,
     food: Query<Entity, With<Food>>,
     score: Query<Entity, With<Score>>,
@@ -300,9 +313,9 @@ fn game_over(
 ) {
     if reader.iter(&game_over_events).next().is_some() {
         for ent in food.iter().chain(segments.iter()).chain(score.iter()) {
-            commands.despawn(ent);
+            commands.despawn_recursive(ent);
         }
-        spawn_snake(commands, materials, segments_res);
+        spawn_snake(commands, asset_server, materials, segments_res);
     }
 }
 
@@ -377,7 +390,7 @@ fn main() {
             ..Default::default()
         })
         .add_resource(SnakeMoveTimer(Timer::new(
-            Duration::from_millis(150. as u64),
+            Duration::from_millis(250. as u64),
             true,
         )))
         .add_resource(WindowSize {
