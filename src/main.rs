@@ -2,9 +2,27 @@ use bevy::prelude::*;
 use rand::prelude::random;
 use std::time::Duration;
 
-const ARENA_WIDTH: u32 = 6;
-const ARENA_HEIGHT: u32 = 6;
+const ARENA_WIDTH: u32 = 12;
+const ARENA_HEIGHT: u32 = 12;
 const FOOD_SPAWN_TIME: u64 = 1000;
+
+struct ButtonMaterials {
+    normal: Handle<ColorMaterial>,
+    hovered: Handle<ColorMaterial>,
+    pressed: Handle<ColorMaterial>,
+}
+
+impl FromResources for ButtonMaterials {
+    fn from_resources(resources: &Resources) -> Self {
+        let mut materials = resources.get_mut::<Assets<ColorMaterial>>().unwrap();
+        ButtonMaterials {
+            normal: materials.add(Color::rgb(0.15, 0.15, 0.15).into()),
+            hovered: materials.add(Color::rgb(0.25, 0.25, 0.25).into()),
+            pressed: materials.add(Color::rgb(0.35, 0.75, 0.35).into()),
+        }
+    }
+}
+
 
 #[derive(Default, Copy, Clone, Eq, PartialEq, Hash, Debug)]
 struct Position { x: i32, y: i32 }
@@ -16,9 +34,6 @@ impl Position {
         }
     }
 }
-
-#[derive(Debug)]
-struct Board(Vec<Position>);
 
 struct Size { width: f32, height: f32 }
 impl Size {
@@ -53,10 +68,23 @@ impl Direction {
 struct WindowSize { height: f32, width: f32 }
 
 struct SnakeHead { direction: Direction }
-struct Materials {
+struct SnakeMaterials {
     head_material: Handle<ColorMaterial>,
     segment_material: Handle<ColorMaterial>,
     food_material: Handle<ColorMaterial>
+}
+
+impl FromResources for SnakeMaterials {
+    fn from_resources(resources: &Resources) -> Self {
+        let mut materials = resources.get_mut::<Assets<ColorMaterial>>().unwrap();
+        let asset_server = resources.get::<AssetServer>().unwrap();
+        let head: Handle<Texture> = asset_server.load("sprites/head.png");
+        SnakeMaterials {
+            segment_material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+            food_material: materials.add(Color::rgb(1.0, 0.0, 1.0).into()),
+            head_material: materials.add(head.into()),
+        }
+    }
 }
 
 struct SnakeSegment;
@@ -103,7 +131,7 @@ fn get_positions(
 
 fn food_spawner(
     commands: &mut Commands,
-    materials: Res<Materials>,
+    materials: Res<SnakeMaterials>,
     time: Res<Time>,
     mut timer: Local<FoodSpawnTimer>,
     segments: ResMut<SnakeSegments>,
@@ -116,7 +144,7 @@ fn food_spawner(
         while segment_positions.iter().any(|&segment| segment == food_position){
             food_position = Position::generate();
         };
-        
+
         commands
             .spawn(SpriteBundle {
                 material: materials.food_material.clone(),
@@ -130,30 +158,29 @@ fn food_spawner(
 
 fn setup(
     commands: &mut Commands,
-    _asset_server: Res<AssetServer>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    // asset_server: Res<AssetServer>,
+    mut _materials: ResMut<Assets<ColorMaterial>>
 ){
     // let head = asset_server.load("sprites/head.png");
-    // let apple = asset_server.load("sprites/apple.png");
+    // let apple: Handle<Texture> = asset_server.load("sprites/apple.png");
     commands
         .spawn(CameraUiBundle::default())
-        .spawn(Camera2dBundle::default())
-        .insert_resource(Materials {
-            head_material: materials.add(Color::rgb(0.7, 0.7, 0.7).into()),
-            segment_material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
-            food_material: materials.add(Color::rgb(1.0, 0.0, 1.0).into())
-            // head_material: materials.add(head.into()),
-            // food_material: materials.add(apple.into())
-        });
+        .spawn(Camera2dBundle::default());
+    // commands.insert_resource(SnakeMaterials {
+    //         // head_material: materials.add(Color::rgb(0.7, 0.7, 0.7).into()),
+    //         segment_material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
+    //         food_material: materials.add(Color::rgb(1.0, 0.0, 1.0).into()),
+    //         head_material: materials.add(head.into()),
+    //         // food_material: materials.add(apple.into())
+    //     });
 }
 
 fn spawn_snake(
     commands: &mut Commands,
     asset_server: Res<AssetServer>,
-    materials: Res<Materials>,
+    materials: Res<SnakeMaterials>,
     mut segments: ResMut<SnakeSegments>,
 ) {
-
     commands.spawn(TextBundle {
         text: Text {
             value: "0".to_string(),
@@ -232,7 +259,6 @@ fn snake_movement(
             .iter()
             .map(|e| *positions.get_mut(*e).unwrap())
             .collect::<Vec<Position>>();
-
         let mut head_pos = positions.get_mut(head_entity).unwrap();
         let dir: Direction = if keyboard_input.pressed(KeyCode::Left) {
             Direction::Left
@@ -304,7 +330,7 @@ fn game_over(
     commands: &mut Commands,
     mut reader: Local<EventReader<GameOverEvent>>,
     game_over_events: Res<Events<GameOverEvent>>,
-    materials: Res<Materials>,
+    materials: Res<SnakeMaterials>,
     asset_server: Res<AssetServer>,
     segments_res: ResMut<SnakeSegments>,
     food: Query<Entity, With<Food>>,
@@ -325,7 +351,7 @@ fn snake_growth(
     growth_events: Res<Events<GrowthEvent>>,
     mut segments: ResMut<SnakeSegments>,
     mut growth_reader: Local<EventReader<GrowthEvent>>,
-    materials: Res<Materials>,
+    materials: Res<SnakeMaterials>,
 ) {
     if growth_reader.iter(&growth_events).next().is_some() {
         segments.0.push(spawn_segment(
@@ -380,9 +406,128 @@ fn snake_eating(
 }
 
 struct GameOverEvent;
+struct QLearn;
+struct DeepLearn;
+struct Human;
+
+fn start_screen(
+    commands: &mut Commands,
+    asset_server: Res<AssetServer>,
+    button_materials: Res<ButtonMaterials>,
+){
+    let button_font = asset_server.load("fonts/FiraSans-Bold.ttf");
+    commands
+        .spawn(CameraUiBundle::default())
+        .spawn(ButtonBundle {
+            style: Style {
+                margin: Rect::all(Val::Auto),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..Default::default()
+            },
+            material: button_materials.normal.clone(),
+            ..Default::default()
+        }).with_children(|parent| {
+            parent.spawn(TextBundle {
+                text: Text {
+                    value: "Q-learning".to_string(),
+                    font: button_font.clone(),
+                    style: TextStyle {
+                        font_size: 40.0,
+                        color: Color::rgb(0.9, 0.9, 0.9),
+                        ..Default::default()
+                    },
+                },
+                ..Default::default()
+            }).with(QLearn);
+        })
+        .spawn(ButtonBundle {
+            style: Style {
+                margin: Rect::all(Val::Auto),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..Default::default()
+            },
+            material: button_materials.normal.clone(),
+            ..Default::default()
+        }).with_children(|parent| {
+            parent.spawn(TextBundle {
+                text: Text {
+                    value: "Deep learning".to_string(),
+                    font: button_font.clone(),
+                    style: TextStyle {
+                        font_size: 40.0,
+                        color: Color::rgb(0.9, 0.9, 0.9),
+                        ..Default::default()
+                    },
+                },
+                ..Default::default()
+            }).with(DeepLearn);
+        })
+        .spawn(ButtonBundle {
+                style: Style {
+                    margin: Rect::all(Val::Auto),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..Default::default()
+                },
+                material: button_materials.normal.clone(),
+                ..Default::default()
+            }).with_children(|parent| {
+                parent.spawn(TextBundle {
+                    text: Text {
+                        value: "Human".to_string(),
+                        font: button_font.clone(),
+                        style: TextStyle {
+                            font_size: 40.0,
+                            color: Color::rgb(0.9, 0.9, 0.9),
+                            ..Default::default()
+                        },
+                    },
+                    ..Default::default()
+                }).with(Human);
+        });
+}
+
+fn menu(
+    commands: &mut Commands,
+    mut state: ResMut<State<AppState>>,
+    button_materials: Res<ButtonMaterials>,
+    mut interaction_query: Query<
+        (&Interaction, &mut Handle<ColorMaterial>),
+        (Mutated<Interaction>, With<Button>),
+    >,
+    q3: Query<(Entity, &Button)>
+) {
+    for (interaction, mut material) in interaction_query.iter_mut() {
+        match *interaction {
+            Interaction::Clicked => {
+                *material = button_materials.pressed.clone();
+                state.set_next(AppState::InGame).unwrap();
+                for (entity, _) in q3.iter(){
+                    commands.despawn_recursive(entity);
+                }
+            }
+            Interaction::Hovered => {
+                *material = button_materials.hovered.clone();
+            }
+            Interaction::None => {
+                *material = button_materials.normal.clone();
+            }
+        }
+    }
+}
+
+const STAGE: &str = "game";
+#[derive(Clone)]
+enum AppState {
+    Menu,
+    InGame,
+}
 
 fn main() {
     App::build()
+        .add_plugins(DefaultPlugins)
         .add_resource(WindowDescriptor {
             title: "Snake".to_string(),
             width: 500.0,
@@ -397,24 +542,29 @@ fn main() {
             height: 500.0,
             width: 500.0
         })
+        .init_resource::<ButtonMaterials>()
+        .init_resource::<SnakeMaterials>()
         .add_resource(Score::default())
+        .add_resource(State::new(AppState::Menu))
         .add_resource(ClearColor(Color::rgb(0.04, 0.04, 0.04)))
         .add_resource(SnakeSegments::default())
         .add_resource(LastTailPosition::default())
-        .add_plugins(DefaultPlugins)
-        .add_startup_system(setup.system())
-        .add_startup_stage("game_setup", SystemStage::single(spawn_snake.system()))
         .add_event::<GrowthEvent>()
         .add_event::<GameOverEvent>()
-        .add_system(position_translation.system())
-        .add_system(snake_movement.system())
-        .add_system(food_spawner.system())
-        .add_system(snake_growth.system())
-        .add_system(size_scaling.system())
-        .add_system(snake_timer.system())
-        .add_system(snake_eating.system())
-        .add_system(game_over.system())
-        .add_system(score_board.system())
+        .add_stage_after(stage::UPDATE, STAGE, StateStage::<AppState>::default())
+        .on_state_enter(STAGE, AppState::Menu, start_screen.system())
+        .on_state_update(STAGE, AppState::Menu, menu.system())
+        .on_state_enter(STAGE, AppState::InGame, setup.system())
+        .on_state_enter(STAGE, AppState::InGame, spawn_snake.system())
+        .on_state_update(STAGE,AppState::InGame, position_translation.system())
+        .on_state_update(STAGE,AppState::InGame, snake_movement.system())
+        .on_state_update(STAGE,AppState::InGame, snake_timer.system())
+        .on_state_update(STAGE,AppState::InGame, snake_growth.system())
+        .on_state_update(STAGE,AppState::InGame, score_board.system())
+        .on_state_update(STAGE,AppState::InGame, size_scaling.system())
+        .on_state_update(STAGE,AppState::InGame, snake_eating.system())
+        .on_state_update(STAGE, AppState::InGame, food_spawner.system())
+        .on_state_update(STAGE, AppState::InGame, game_over.system())
         .add_system(resize_window_check.system())
         .add_system(bevy::input::system::exit_on_esc_system.system())
         .run();
