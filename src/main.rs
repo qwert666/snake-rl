@@ -1,10 +1,22 @@
 use bevy::prelude::*;
 use rand::prelude::random;
-use std::time::Duration;
+use std::{any::type_name, time::Duration};
 
 const ARENA_WIDTH: u32 = 12;
 const ARENA_HEIGHT: u32 = 12;
 const FOOD_SPAWN_TIME: u64 = 1000;
+
+
+struct GameOverEvent;
+
+enum Games {
+    QLearn,
+    DeepLearn,
+    Human
+}
+struct GameMode {
+    value: Games
+}
 
 struct ButtonMaterials {
     normal: Handle<ColorMaterial>,
@@ -79,9 +91,10 @@ impl FromResources for SnakeMaterials {
         let mut materials = resources.get_mut::<Assets<ColorMaterial>>().unwrap();
         let asset_server = resources.get::<AssetServer>().unwrap();
         let head: Handle<Texture> = asset_server.load("sprites/head.png");
+        let apple: Handle<Texture> = asset_server.load("sprites/apple.png");
         SnakeMaterials {
             segment_material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
-            food_material: materials.add(Color::rgb(1.0, 0.0, 1.0).into()),
+            food_material: materials.add(apple.into()),
             head_material: materials.add(head.into()),
         }
     }
@@ -133,8 +146,8 @@ fn food_spawner(
     commands: &mut Commands,
     materials: Res<SnakeMaterials>,
     time: Res<Time>,
-    mut timer: Local<FoodSpawnTimer>,
     segments: ResMut<SnakeSegments>,
+    mut timer: Local<FoodSpawnTimer>,
     positions: Query<&mut Position>
 ) {
     if timer.0.tick(time.delta_seconds()).finished() {
@@ -148,10 +161,14 @@ fn food_spawner(
         commands
             .spawn(SpriteBundle {
                 material: materials.food_material.clone(),
+                transform: Transform {
+                    translation: Vec3::new(0.0, 0.0, -1.0),
+                    ..Default::default()
+                },
                 ..Default::default()
             })
-            .with(Food)
             .with(food_position)
+            .with(Food)
             .with(Size::square(0.8));
     }
 }
@@ -161,18 +178,9 @@ fn setup(
     // asset_server: Res<AssetServer>,
     mut _materials: ResMut<Assets<ColorMaterial>>
 ){
-    // let head = asset_server.load("sprites/head.png");
-    // let apple: Handle<Texture> = asset_server.load("sprites/apple.png");
     commands
         .spawn(CameraUiBundle::default())
         .spawn(Camera2dBundle::default());
-    // commands.insert_resource(SnakeMaterials {
-    //         // head_material: materials.add(Color::rgb(0.7, 0.7, 0.7).into()),
-    //         segment_material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
-    //         food_material: materials.add(Color::rgb(1.0, 0.0, 1.0).into()),
-    //         head_material: materials.add(head.into()),
-    //         // food_material: materials.add(apple.into())
-    //     });
 }
 
 fn spawn_snake(
@@ -201,6 +209,10 @@ fn spawn_snake(
         commands
             .spawn(SpriteBundle {
                 material: materials.head_material.clone(),
+                transform: Transform {
+                    translation: Vec3::new(0.0, 0.0, -1.0),
+                    ..Default::default()
+                },
                 ..Default::default()
             })
             .with(SnakeHead {
@@ -336,10 +348,11 @@ fn game_over(
     food: Query<Entity, With<Food>>,
     score: Query<Entity, With<Score>>,
     segments: Query<Entity, With<SnakeSegment>>,
+    last_tail: Query<Entity, With<LastTailPosition>>
 ) {
     if reader.iter(&game_over_events).next().is_some() {
-        for ent in food.iter().chain(segments.iter()).chain(score.iter()) {
-            commands.despawn_recursive(ent);
+        for ent in food.iter().chain(segments.iter()).chain(score.iter()).chain(last_tail.iter()) {
+            commands.despawn(ent);
         }
         spawn_snake(commands, asset_server, materials, segments_res);
     }
@@ -347,13 +360,15 @@ fn game_over(
 
 fn snake_growth(
     commands: &mut Commands,
+    mut game_over_reader: Local<EventReader<GameOverEvent>>,
+    mut growth_reader: Local<EventReader<GrowthEvent>>,
     last_tail_position: Res<LastTailPosition>,
     growth_events: Res<Events<GrowthEvent>>,
+    game_over_events: Res<Events<GameOverEvent>>,
     mut segments: ResMut<SnakeSegments>,
-    mut growth_reader: Local<EventReader<GrowthEvent>>,
     materials: Res<SnakeMaterials>,
 ) {
-    if growth_reader.iter(&growth_events).next().is_some() {
+    if growth_reader.iter(&growth_events).next().is_some() && !game_over_reader.iter(&game_over_events).next().is_some() {
         segments.0.push(spawn_segment(
             commands,
             &materials.segment_material,
@@ -405,11 +420,6 @@ fn snake_eating(
     }
 }
 
-struct GameOverEvent;
-struct QLearn;
-struct DeepLearn;
-struct Human;
-
 fn start_screen(
     commands: &mut Commands,
     asset_server: Res<AssetServer>,
@@ -439,7 +449,7 @@ fn start_screen(
                     },
                 },
                 ..Default::default()
-            }).with(QLearn);
+            }).with(GameMode { value: Games::QLearn});
         })
         .spawn(ButtonBundle {
             style: Style {
@@ -462,7 +472,7 @@ fn start_screen(
                     },
                 },
                 ..Default::default()
-            }).with(DeepLearn);
+            }).with(GameMode { value: Games::DeepLearn});
         })
         .spawn(ButtonBundle {
                 style: Style {
@@ -485,7 +495,7 @@ fn start_screen(
                         },
                     },
                     ..Default::default()
-                }).with(Human);
+                }).with(GameMode { value: Games::Human });
         });
 }
 
@@ -493,20 +503,22 @@ fn menu(
     commands: &mut Commands,
     mut state: ResMut<State<AppState>>,
     button_materials: Res<ButtonMaterials>,
+    mut game_mode_events: ResMut<Events<GameMode>>,
     mut interaction_query: Query<
         (&Interaction, &mut Handle<ColorMaterial>),
         (Mutated<Interaction>, With<Button>),
     >,
-    q3: Query<(Entity, &Button)>
+    buttons_query: Query<(Entity, &Button)>
 ) {
     for (interaction, mut material) in interaction_query.iter_mut() {
         match *interaction {
             Interaction::Clicked => {
                 *material = button_materials.pressed.clone();
                 state.set_next(AppState::InGame).unwrap();
-                for (entity, _) in q3.iter(){
+                for (entity, _) in buttons_query.iter(){
                     commands.despawn_recursive(entity);
                 }
+                game_mode_events.send(GameMode { value: Games::DeepLearn})
             }
             Interaction::Hovered => {
                 *material = button_materials.hovered.clone();
@@ -551,18 +563,19 @@ fn main() {
         .add_resource(LastTailPosition::default())
         .add_event::<GrowthEvent>()
         .add_event::<GameOverEvent>()
+        .add_event::<GameMode>()
         .add_stage_after(stage::UPDATE, STAGE, StateStage::<AppState>::default())
         .on_state_enter(STAGE, AppState::Menu, start_screen.system())
         .on_state_update(STAGE, AppState::Menu, menu.system())
         .on_state_enter(STAGE, AppState::InGame, setup.system())
         .on_state_enter(STAGE, AppState::InGame, spawn_snake.system())
-        .on_state_update(STAGE,AppState::InGame, position_translation.system())
-        .on_state_update(STAGE,AppState::InGame, snake_movement.system())
-        .on_state_update(STAGE,AppState::InGame, snake_timer.system())
-        .on_state_update(STAGE,AppState::InGame, snake_growth.system())
-        .on_state_update(STAGE,AppState::InGame, score_board.system())
-        .on_state_update(STAGE,AppState::InGame, size_scaling.system())
-        .on_state_update(STAGE,AppState::InGame, snake_eating.system())
+        .on_state_update(STAGE, AppState::InGame, position_translation.system())
+        .on_state_update(STAGE, AppState::InGame, snake_movement.system())
+        .on_state_update(STAGE, AppState::InGame, snake_timer.system())
+        .on_state_update(STAGE, AppState::InGame, snake_growth.system())
+        .on_state_update(STAGE, AppState::InGame, score_board.system())
+        .on_state_update(STAGE, AppState::InGame, size_scaling.system())
+        .on_state_update(STAGE, AppState::InGame, snake_eating.system())
         .on_state_update(STAGE, AppState::InGame, food_spawner.system())
         .on_state_update(STAGE, AppState::InGame, game_over.system())
         .add_system(resize_window_check.system())
