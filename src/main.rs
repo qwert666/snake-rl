@@ -1,6 +1,7 @@
+#![allow(clippy::type_complexity, clippy::too_many_arguments)]
 use bevy::prelude::*;
 use rand::prelude::random;
-use std::{any::type_name, time::Duration};
+use std::time::Duration;
 
 const ARENA_WIDTH: u32 = 12;
 const ARENA_HEIGHT: u32 = 12;
@@ -323,6 +324,7 @@ fn snake_movement(
     }
 }
 
+#[allow(clippy::float_cmp)]
 fn resize_window_check(
     windows: Res<Windows>,
     mut window_size: ResMut<WindowSize>
@@ -368,7 +370,7 @@ fn snake_growth(
     mut segments: ResMut<SnakeSegments>,
     materials: Res<SnakeMaterials>,
 ) {
-    if growth_reader.iter(&growth_events).next().is_some() && !game_over_reader.iter(&game_over_events).next().is_some() {
+    if growth_reader.iter(&growth_events).next().is_some() && game_over_reader.iter(&game_over_events).next().is_none() {
         segments.0.push(spawn_segment(
             commands,
             &materials.segment_material,
@@ -394,7 +396,7 @@ fn score_board(
 ){
     if growth_reader.iter(&growth_events).next().is_some() {
         for (mut score, mut text) in score_query.iter_mut(){
-            score.0 = score.0 + 1;
+            score.0 += 1;
             text.value = format!("{}", score.0);
         }
     }
